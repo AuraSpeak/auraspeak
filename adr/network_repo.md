@@ -1,8 +1,11 @@
 # ADR-0001 - Networking Repo
 
 adr: ADR-0001
+
 project: "AuraSpeak Networking"
+
 status: Accepted
+
 date: 2026-01-30
 ---
 
