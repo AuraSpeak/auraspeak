@@ -9,8 +9,6 @@ status: Accepted
 date: 2026-01-30
 ---
 
-# ADR-0001: Networking Repo
-
 ## Context
 
 It is possible to combine many parts of the net code for the client and server. Furthermore, it appears that many parts, such as buffers, the router, and the fragmentation logic, are the same in both the client and server.
