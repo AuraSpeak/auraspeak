@@ -1,0 +1,13 @@
+# Pre-commit hooks for AuraSpeak
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+# https://pre-commit.com
+
+repos:
+  - repo: local
+    hooks:
+      - id: check-placeholders
+        name: Check for <<...>> placeholders
+        entry: .pre-commit/check-placeholders.sh
+        language: system
+        pass_filenames: true
