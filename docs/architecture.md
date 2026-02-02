@@ -1,6 +1,6 @@
 # AuraSpeak – Architecture
 
-**Status:** Pre-alpha · **Last updated:** 2026-01-28 · **Stability:** Breaking changes expected
+**Status:** Pre-alpha · **Last updated:** 2026-02-02 · **Stability:** Breaking changes expected
 
 ---
 
@@ -17,9 +17,9 @@ This document describes the technical architecture and components of AuraSpeak. 
 
 ## System Overview
 
-The architecture comprises existing components (Client, Community Server, Protocol, Debug UI, Workflow) and the planned Platform for user and key management and direct messages. Client and Server use **UDP/DTLS** as transport; the **AuraSpeak Protocol** (framing, packet types) runs on top; application **features** are Chat, Voice, File Transfer, Commands, and (planned) DMs. The Debug UI supports development; Workflow manages the dev environment.
+The architecture comprises existing components (Client, Community Server, Protocol, Network, Debug UI, Workflow) and the planned Platform for user and key management and direct messages. Client and Server delegate transport to the **Network** package (DTLS-UDP, readloop, packet router); the **AuraSpeak Protocol** (framing, packet types) is used for encode/decode and runs on top. Application **features** are Chat, Voice, File Transfer, Commands, and (planned) DMs. The Debug UI supports development. Workflow provides a **unified local development setup**: scripts clone repos into `workflow/src/` and create a Go workspace (`go.work`) so all components are developed together.
 
-Protocol is a **library/package** linked into Client and Server, not a deployable service. The diagram below shows it in a subgraph so it reads as an artifact, not a runtime.
+Protocol and Network are **libraries/packages** linked into Client and Server, not deployable services. The diagram below shows Protocol in a subgraph so it reads as an artifact, not a runtime.
 
 ```mermaid
 flowchart LR
@@ -45,7 +45,7 @@ flowchart LR
     Workflow -->|"Dev setup"| CommunityServer
 ```
 
-*Solid lines: existing. Dashed: planned / used-by. Client–Server link is transport (UDP/DTLS); Protocol is a library linked into Client and Server.*
+*Solid lines: existing. Dashed: planned / used-by. Client–Server link is transport (UDP/DTLS); Protocol is a library linked into Client and Server. The unified dev layout lives under `workflow/src/` (protocol, network, client, server, debug-ui).*
 
 ---
 
@@ -73,23 +73,49 @@ Application-level capabilities built on the AuraSpeak Protocol:
 
 ## Components
 
-Repo links use `https://github.com/AuraSpeak/<repo>` (org **AuraSpeak**, repo names **client**, **server**, **protocol**, **debug-ui**, **workflow**, **platform**).
+Repo links use `https://github.com/AuraSpeak/<repo>` (org **AuraSpeak**, repo names **client**, **server**, **protocol**, **network**, **debug-ui**, **workflow**, **platform**).
 
 ### Existing Components
 
 | Component    | Repo                                                        | Role                                                                                                                                                        |
 | ------------ | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Client**   | [AuraSpeak/client](https://github.com/AuraSpeak/client)     | Client code for AuraSpeak. Highly decoupled – can be tested in isolation in the UI Compile or loaded in the Debug UI. Supports multiple nodes per instance. |
-| **Server**   | [AuraSpeak/server](https://github.com/AuraSpeak/server)     | Community server code. Authoritative for packet handling and (later) chat: dispatches packets and sends commands to clients.                                |
-| **Protocol** | [AuraSpeak/protocol](https://github.com/AuraSpeak/protocol) | Application protocol (framing, packet types) for AuraSpeak. Transport is UDP/DTLS. Contains protocol definition and implementation.                         |
-| **Debug UI** | [AuraSpeak/debug-ui](https://github.com/AuraSpeak/debug-ui) | Web interface for inspecting packet flow; evolves with the project to show how packets are routed on the server. Go backend, Vue frontend.                  |
-| **Workflow** | [AuraSpeak/workflow](https://github.com/AuraSpeak/workflow) | Setup and management of the development environment.                                                                                                        |
+| **Client**   | [AuraSpeak/client](https://github.com/AuraSpeak/client)     | Application-layer client: wraps the network client; adds state, command channel, and default ClientNeedsDisconnect handler. Can be tested in isolation or loaded in the Debug UI. Supports multiple nodes per instance. |
+| **Server**   | [AuraSpeak/server](https://github.com/AuraSpeak/server)     | Application-layer Community Server: wraps the network server; adds config (YAML, DTLS certs), trace events for Debug UI, packet handlers (e.g. DebugHello), broadcast and lifecycle. Authoritative for packet handling and (later) chat. |
+| **Protocol** | [AuraSpeak/protocol](https://github.com/AuraSpeak/protocol) | Application protocol: framing (header + payload), YAML-driven packet types, encode/decode. Transport is UDP/DTLS (implemented in Network). Contains protocol definition and implementation. |
+| **Network**  | [AuraSpeak/network](https://github.com/AuraSpeak/network)    | Transport layer implementation: DTLS-UDP server and client, readloop (read → decode → route), packet router by type. Used by Client and Server. |
+| **Debug UI** | [AuraSpeak/debug-ui](https://github.com/AuraSpeak/debug-ui) | HTTP + WebSocket app: starts/stops one Community Server and multiple UDP clients, sends datagrams, exposes traces (e.g. Mermaid sequence diagrams). Uses server’s debugui config. Go backend, Vue frontend in `web/`. |
+| **Workflow** | [AuraSpeak/workflow](https://github.com/AuraSpeak/workflow) | Unified local dev setup: scripts clone repos into `workflow/src/`, Go workspace init; bootstrap and test-all. |
 
 ### Planned Components
 
 | Component    | Repo                                                        | Role                                              |
 | ------------ | ----------------------------------------------------------- | ------------------------------------------------- |
 | **Platform** | [AuraSpeak/platform](https://github.com/AuraSpeak/platform) | User and key management, hub for direct messages. |
+
+### Workflow and local dev layout
+
+Workflow gives you a single place to develop all components. Run `./scripts/clone-all.sh` to clone **protocol**, **network**, **client**, **server**, and **debug-ui** into `workflow/src/`. Then run `./scripts/go-work-init.sh` to create a `go.work` file in `src/` so Go treats them as one workspace. You can also use `make setup` or `just setup`; `make bootstrap` runs code generation (e.g. protocol packet types); `make test-all` runs tests across all modules.
+
+Dependency order: **Protocol** (standalone) → **Network** (uses Protocol) → **Client** and **Server** (use Network + Protocol) → **Debug UI** (uses Client, Server, Protocol).
+
+```mermaid
+flowchart LR
+    subgraph workflowSrc [workflow/src]
+        Protocol[protocol]
+        Network[network]
+        Client[client]
+        Server[server]
+        DebugUI[debug-ui]
+    end
+    Protocol -->|"used by"| Network
+    Protocol -->|"used by"| Client
+    Protocol -->|"used by"| Server
+    Network -->|"used by"| Client
+    Network -->|"used by"| Server
+    Client -->|"used by"| DebugUI
+    Server -->|"used by"| DebugUI
+    Protocol -->|"used by"| DebugUI
+```
 
 ---
 
@@ -253,6 +279,8 @@ The following describes how the high-level flow is implemented today. Variable n
 | **Client Receive** | `conn.Read(buf)` → raw → `Decode(raw)` → packet → `packetRouter.HandlePacket(packet)`. No channel, no send loop. |
 
 **Concrete types (Go):** `protocol.Packet`, `protocol.Decode` / `Encode`; server uses `nm.router`, client uses `packetRouter`; server iterates with `conns.Range`.
+
+Read, decode, and dispatch live in the **network** readloop and router: the readloop calls `protocol.Decode` then `router.HandlePacket(packet, peer)`. The application layer (client and server) registers handlers and owns encoding before send (client: encode then `Send(msg)`) or broadcast (server: `Broadcast(packet)`).
 
 ### Client / Platform
 
